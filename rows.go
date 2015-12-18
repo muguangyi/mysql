@@ -14,11 +14,9 @@ import (
 )
 
 type mysqlField struct {
-	tableName string
-	name      string
-	flags     fieldFlag
 	fieldType byte
-	decimals  byte
+	flags     fieldFlag
+	name      string
 }
 
 type mysqlRows struct {
@@ -34,22 +32,10 @@ type textRows struct {
 	mysqlRows
 }
 
-type emptyRows struct{}
-
 func (rows *mysqlRows) Columns() []string {
 	columns := make([]string, len(rows.columns))
-	if rows.mc.cfg.columnsWithAlias {
-		for i := range columns {
-			if tableName := rows.columns[i].tableName; len(tableName) > 0 {
-				columns[i] = tableName + "." + rows.columns[i].name
-			} else {
-				columns[i] = rows.columns[i].name
-			}
-		}
-	} else {
-		for i := range columns {
-			columns[i] = rows.columns[i].name
-		}
+	for i := range columns {
+		columns[i] = rows.columns[i].name
 	}
 	return columns
 }
@@ -60,7 +46,7 @@ func (rows *mysqlRows) Close() error {
 		return nil
 	}
 	if mc.netConn == nil {
-		return ErrInvalidConn
+		return errInvalidConn
 	}
 
 	// Remove unread packets from stream
@@ -72,11 +58,14 @@ func (rows *mysqlRows) Close() error {
 func (rows *binaryRows) Next(dest []driver.Value) error {
 	if mc := rows.mc; mc != nil {
 		if mc.netConn == nil {
-			return ErrInvalidConn
+			return errInvalidConn
 		}
 
 		// Fetch next row from stream
-		return rows.readRow(dest)
+		if err := rows.readRow(dest); err != io.EOF {
+			return err
+		}
+		rows.mc = nil
 	}
 	return io.EOF
 }
@@ -84,23 +73,14 @@ func (rows *binaryRows) Next(dest []driver.Value) error {
 func (rows *textRows) Next(dest []driver.Value) error {
 	if mc := rows.mc; mc != nil {
 		if mc.netConn == nil {
-			return ErrInvalidConn
+			return errInvalidConn
 		}
 
 		// Fetch next row from stream
-		return rows.readRow(dest)
+		if err := rows.readRow(dest); err != io.EOF {
+			return err
+		}
+		rows.mc = nil
 	}
-	return io.EOF
-}
-
-func (rows emptyRows) Columns() []string {
-	return nil
-}
-
-func (rows emptyRows) Close() error {
-	return nil
-}
-
-func (rows emptyRows) Next(dest []driver.Value) error {
 	return io.EOF
 }
